@@ -1,0 +1,20 @@
+# Virtual environment
+.venv/
+
+# Data and dataset folders
+data/
+mimic-iv-3.1/
+
+# Execution results and models
+results/
+models/
+
+# Database files
+triage_system.duckdb
+
+# Documentation and planning files to ignore
+data_analysis.md
+implementation_plan.md.resolved
+Project_Documentation.md
+task.md.resolved
+WALKTHROUGH.md

@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Emergency Triage — System Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: rgba(99,179,237,0.15);
+    --text: #e2e8f0;
+    --muted: #64748b;
+
+    --data:    #3b82f6;
+    --process: #8b5cf6;
+    --ml:      #ec4899;
+    --control: #f59e0b;
+    --present: #10b981;
+    --arrow:   rgba(148,163,184,0.4);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 0.4rem;
+    background: linear-gradient(135deg, #63b3ed, #b794f4, #fc8181);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 2.5rem;
+  }
+
+  /* ── Legend ───────────────────────────────────────── */
+  .legend {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  /* ── Main pipeline ────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    max-width: 1300px;
+    margin: 0 auto 3rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+
+  .layer {
+    flex: 1;
+    min-width: 190px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Arrow connector between layers */
+  .layer:not(:last-child)::after {
+    content: '▶';
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--arrow);
+    font-size: 1.2rem;
+    z-index: 10;
+  }
+
+  .layer-header {
+    border-radius: 10px 10px 0 0;
+    padding: 0.7rem 1rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    color: #fff;
+  }
+
+  .layer-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  /* ── Cards inside layers ─────────────────────────── */
+  .card {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 0.65rem 0.8rem;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  }
+  .card-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .card-desc {
+    font-size: 0.68rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .card-tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-top: 0.3rem;
+    opacity: 0.8;
+  }
+
+  /* Layer colour themes */
+  .data    .layer-header { background: linear-gradient(135deg, #1d4ed8, #3b82f6); }
+  .data    .card          { border-left-color: var(--data); }
+  .data    .card-tag      { background: rgba(59,130,246,0.2); color: #93c5fd; }
+  .data    .card:hover    { box-shadow: 0 6px 20px rgba(59,130,246,0.25); }
+
+  .process .layer-header  { background: linear-gradient(135deg, #5b21b6, #8b5cf6); }
+  .process .card          { border-left-color: var(--process); }
+  .process .card-tag      { background: rgba(139,92,246,0.2); color: #c4b5fd; }
+  .process .card:hover    { box-shadow: 0 6px 20px rgba(139,92,246,0.25); }
+
+  .ml      .layer-header  { background: linear-gradient(135deg, #9d174d, #ec4899); }
+  .ml      .card          { border-left-color: var(--ml); }
+  .ml      .card-tag      { background: rgba(236,72,153,0.2); color: #f9a8d4; }
+  .ml      .card:hover    { box-shadow: 0 6px 20px rgba(236,72,153,0.25); }
+
+  .control .layer-header  { background: linear-gradient(135deg, #92400e, #f59e0b); }
+  .control .card          { border-left-color: var(--control); }
+  .control .card-tag      { background: rgba(245,158,11,0.2); color: #fcd34d; }
+  .control .card:hover    { box-shadow: 0 6px 20px rgba(245,158,11,0.25); }
+
+  .present .layer-header  { background: linear-gradient(135deg, #065f46, #10b981); }
+  .present .card          { border-left-color: var(--present); }
+  .present .card-tag      { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+  .present .card:hover    { box-shadow: 0 6px 20px rgba(16,185,129,0.25); }
+
+  /* ── Equation banner ─────────────────────────────── */
+  .equation-banner {
+    max-width: 860px;
+    margin: 0 auto 2.5rem;
+    background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(236,72,153,0.1));
+    border: 1px solid rgba(139,92,246,0.3);
+    border-radius: 12px;
+    padding: 1.2rem 1.8rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .eq-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #c4b5fd;
+    white-space: nowrap;
+  }
+  .eq-formula {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #f0abfc;
+  }
+  .eq-vars {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .eq-vars span { color: var(--text); }
+
+  /* ── Data flow section ───────────────────────────── */
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.2rem;
+    max-width: 1100px;
+    margin: 0 auto 2.5rem;
+  }
+  .flow-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem;
+  }
+  .flow-card h3 {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .flow-card ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .flow-card li {
+    font-size: 0.73rem;
+    color: var(--muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    line-height: 1.4;
+  }
+  .flow-card li::before {
+    content: '→';
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  /* ── Metrics row ─────────────────────────────────── */
+  .metrics {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.4rem;
+    text-align: center;
+    flex: 1;
+    min-width: 140px;
+  }
+  .metric-val {
+    font-size: 1.6rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    background: linear-gradient(135deg, #63b3ed, #b794f4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .metric-label {
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  section-title {
+    display: block;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1.2rem;
+  }
+
+  .gap { margin-top: 2rem; }
+</style>
+</head>
+<body>
+
+<h1>AI-Driven Emergency Triage System</h1>
+<p class="subtitle">End-to-end architecture · MIMIC-IV → XGBoost → Logarithmic Aging Queue → Flask Dashboard</p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--data)"></div> Data Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--process)"></div> Processing Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--ml)"></div> ML Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--control)"></div> Control Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--present)"></div> Presentation Layer</div>
+</div>
+
+<!-- 5-Layer Pipeline -->
+<div class="pipeline">
+
+  <!-- 1. Data -->
+  <div class="layer data">
+    <div class="layer-header">① Data Layer</div>
+    <div class="layer-body">
+      <div class="card">
+        <div class="card-title">MIMIC-IV v3.1</div>
+        <div class="card-desc">Raw EHR data — icustays, chartevents, patients tables</div>
+        <span class="card-tag">PhysioNet</span>
+      </div>
+      <div class="card">
+        <div class="card-title">DuckDB Engine</div>
+        <div class="card-desc">High-speed columnar SQL extraction, 4-hour ICU window filter</div>
+        <span class="card-tag">duckdb.sql()</span>
+      </div>
+      <div class="card">
+        <div class="card-title">26 Clinical Features</div>
+        <div class="card-desc">ABCDE vitals, GCS scores, 8 comorbidity flags</div>
+        <span class="card-tag">CSV → DataFrame</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Processing -->
+  <div class="layer process">
+    <div class="layer-header">② Processing Layer</div>
+    <div class="layer-body">
+      <div class="card">
+        <div class="card-title">Pandas Cleaning</div>
+        <div class="card-desc">Physiological boundary constraints, impossible value removal</div>
+        <span class="card-tag">pandas</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Median Imputation</div>
+        <div class="card-desc">NaN handling preserves statistical distributions</div>
+        <span class="card-tag">SimpleImputer</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Feature Engineering</div>
+        <div class="card-desc">Min/max vitals aggregation per 4-hr window, gender encoding</div>
+        <span class="card-tag">modeling_dataset.csv</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ML -->
+  <div class="layer ml">
+    <div class="layer-header">③ ML Layer</div>
+    <div class="layer-body">
+      <div class="card">
+        <div class="card-title">XGBoost Classifier</div>
+        <div class="card-desc">Sequential gradient-boosted trees targeting residual errors. AUROC 0.836, AUPRC 0.461</div>
+        <span class="card-tag">xgboost_model.json</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Mortality Probability</div>
+        <div class="card-desc">P(Mortality) ∈ [0,1] → scaled × 100 = Base Severity Score Sb</div>
+        <span class="card-tag">predict_proba()</span>
+      </div>
+      <div class="card">
+        <div class="card-title">SHAP Explainer</div>
+        <div class="card-desc">TreeExplainer generates top-5 feature contributions per patient</div>
+        <span class="card-tag">shap.TreeExplainer</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Control -->
+  <div class="layer control">
+    <div class="layer-header">④ Control Layer</div>
+    <div class="layer-body">
+      <div class="card">
+        <div class="card-title">Log-Aging Queue</div>
+        <div class="card-desc">Effective = Sb + α·ln(1+wait_min), α=8.0. heapq-backed priority sort.</div>
+        <span class="card-tag">O(N log N)</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Doctor Release Thread</div>
+        <div class="card-desc">Daemon checks every 10 s, frees doctor after 15-min treatment</div>
+        <span class="card-tag">threading.Thread</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Reassessment Thread</div>
+        <div class="card-desc">Every 60 s, flags patients waiting ≥ 30 min for vital re-entry</div>
+        <span class="card-tag">REASSESSMENT_THRESHOLD</span>
+      </div>
+      <div class="card">
+        <div class="card-title">3-Queue Comparator</div>
+        <div class="card-desc">Parallel FIFO, Age-based, and Aging queues for live comparison</div>
+        <span class="card-tag">get_all_queues()</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Presentation -->
+  <div class="layer present">
+    <div class="layer-header">⑤ Presentation Layer</div>
+    <div class="layer-body">
+      <div class="card">
+        <div class="card-title">Flask REST API</div>
+        <div class="card-desc">/api/predict, /api/queue, /api/treat, /api/simulate, /api/fairness</div>
+        <span class="card-tag">port 5000</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Live Dashboard</div>
+        <div class="card-desc">HTML/CSS real-time queue table, severity badges, SHAP panel</div>
+        <span class="card-tag">index.html</span>
+      </div>
+      <div class="card">
+        <div class="card-title">Fairness Endpoint</div>
+        <div class="card-desc">AUROC & recall breakdown by age group and gender</div>
+        <span class="card-tag">/api/fairness</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Core Algorithm Equation -->
+<section-title>Core Scheduling Algorithm</section-title>
+<div class="equation-banner">
+  <div class="eq-label">Log Aging Formula</div>
+  <div class="eq-formula">Effective Score = S<sub style="font-size:0.75rem">b</sub> + α · ln(1 + t<sub style="font-size:0.75rem">wait</sub>)</div>
+  <div class="eq-vars">
+    <span>Sb</span> = XGBoost Base Severity Score (0–100)<br>
+    <span>α</span> = Aging factor (optimal = 0.5–1.0, app uses 8.0)<br>
+    <span>t</span> = Accumulated wait time in minutes
+  </div>
+</div>
+
+<!-- Data Flow Details -->
+<div class="gap"></div>
+<section-title>Key Data Flows</section-title>
+<div class="flow-grid">
+  <div class="flow-card">
+    <h3><span style="color:var(--ml)">●</span> Patient Admission Flow</h3>
+    <ul>
+      <li>Clinician submits 26 vitals via Dashboard form</li>
+      <li>POST /api/predict → XGBoost inference (microseconds)</li>
+      <li>SHAP top-5 explanations computed concurrently</li>
+      <li>Patient record appended to WAITING_QUEUE (O(1))</li>
+      <li>All 3 queues re-sorted and returned in response</li>
+    </ul>
+  </div>
+  <div class="flow-card">
+    <h3><span style="color:var(--control)">●</span> Dynamic Priority Recalculation</h3>
+    <ul>
+      <li>Every GET /api/queue call triggers get_all_queues()</li>
+      <li>Logarithmic age applied to each patient in O(N)</li>
+      <li>Timsort produces final priority order in O(N log N)</li>
+      <li>Reassessment daemon sets needs_reassessment=True</li>
+      <li>Nurse re-submits vitals → score recalculated live</li>
+    </ul>
+  </div>
+  <div class="flow-card">
+    <h3><span style="color:var(--present)">●</span> Doctor Allocation Flow</h3>
+    <ul>
+      <li>Clinician clicks "Treat" on highest-priority patient</li>
+      <li>POST /api/treat/:id → AVAILABLE_DOCTORS decremented</li>
+      <li>Patient removed from queue, added to BUSY_DOCTORS</li>
+      <li>Doctor Release Daemon checks every 10 s</li>
+      <li>After 15 min, doctor freed → semaphore incremented</li>
+    </ul>
+  </div>
+  <div class="flow-card">
+    <h3><span style="color:var(--data)">●</span> Simulation & Evaluation</h3>
+    <ul>
+      <li>POST /api/simulate samples 25 real MIMIC-IV patients</li>
+      <li>Background thread adds 1 patient/60 s to mimic arrivals</li>
+      <li>94-patient 8-hr cohort tested across FIFO / Priority / Aging</li>
+      <li>Alpha sensitivity analysis over α = 0.0 → 5.0</li>
+      <li>/api/fairness checks AUROC across age/gender strata</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Key Metrics -->
+<div class="gap"></div>
+<section-title>Simulation Results at a Glance</section-title>
+<div class="metrics">
+  <div class="metric-card">
+    <div class="metric-val">0.836</div>
+    <div class="metric-label">XGBoost AUROC</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">3.0 m</div>
+    <div class="metric-label">Critical Avg Wait (Aging)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">101 m</div>
+    <div class="metric-label">Low-Risk Max Wait (Aging)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">157 m</div>
+    <div class="metric-label">Low-Risk Max Wait (Pure Priority)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">65 m</div>
+    <div class="metric-label">Critical Max Wait (FIFO)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">26</div>
+    <div class="metric-label">Clinical Features</div>
+  </div>
+</div>
+
+</body>
+</html>

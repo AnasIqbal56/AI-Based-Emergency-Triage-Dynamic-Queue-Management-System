@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Triage Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Left Column: Patient Intake Form -->
+        <main class="intake-section">
+            <header>
+                <h1>Emergency Intake</h1>
+                <p>Input clinical parameters to instantly evaluate patient mortality risk and dynamically assign their Queue Position.</p>
+                <div class="action-buttons">
+                    <button type="button" id="btn-healthy" class="btn-outline">Auto-Fill Healthy</button>
+                    <button type="button" id="btn-critical" class="btn-outline danger">Auto-Fill Critical</button>
+                    <button type="button" id="btn-simulate" class="btn-outline" style="margin-left: auto; border-color: #8b5cf6; color: #8b5cf6;">Simulate 25 Patients</button>
+                </div>
+            </header>
+
+            <form id="triage-form">
+                <!-- Group 1: Demographics -->
+                <section class="form-group">
+                    <h2><span class="icon">👤</span> Demographics</h2>
+                    <div class="grid-inputs">
+                        <div class="input-field">
+                            <label>Patient Name</label>
+                            <input type="text" id="patient_name" placeholder="John Doe">
+                        </div>
+                        <div class="input-field">
+                            <label>Age</label>
+                            <input type="number" id="age" min="0" max="150" required>
+                        </div>
+                        <div class="input-field">
+                            <label>Gender (0=F, 1=M)</label>
+                            <input type="number" id="is_male" min="0" max="1" required>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Group 2: Vitals -->
+                <section class="form-group">
+                    <h2><span class="icon">💓</span> Vitals (First 4 Hours)</h2>
+                    <div class="grid-inputs">
+                        <div class="input-field"><label>Resp Rate (Mean)</label><input type="number" step="0.1" id="resp_rate_mean" required></div>
+                        <div class="input-field"><label>Resp Rate (Max)</label><input type="number" step="0.1" id="resp_rate_max" required></div>
+                        <div class="input-field"><label>SpO2 (Min)</label><input type="number" step="0.1" id="spo2_min" required></div>
+                        <div class="input-field"><label>SpO2 (Mean)</label><input type="number" step="0.1" id="spo2_mean" required></div>
+                        <div class="input-field"><label>Heart Rate (Mean)</label><input type="number" step="0.1" id="heart_rate_mean" required></div>
+                        <div class="input-field"><label>Heart Rate (Max)</label><input type="number" step="0.1" id="heart_rate_max" required></div>
+                        <div class="input-field"><label>Systolic BP (Min)</label><input type="number" step="0.1" id="bp_systolic_min" required></div>
+                        <div class="input-field"><label>Systolic BP (Mean)</label><input type="number" step="0.1" id="bp_systolic_mean" required></div>
+                        <div class="input-field"><label>Diastolic BP (Min)</label><input type="number" step="0.1" id="bp_diastolic_min" required></div>
+                        <div class="input-field"><label>Diastolic BP (Mean)</label><input type="number" step="0.1" id="bp_diastolic_mean" required></div>
+                        <div class="input-field"><label>Temperature °C (Min)</label><input type="number" step="0.1" id="temp_celsius_min" required></div>
+                        <div class="input-field"><label>Temperature °C (Max)</label><input type="number" step="0.1" id="temp_celsius_max" required></div>
+                    </div>
+                </section>
+
+                <!-- Group 3: GCS -->
+                <section class="form-group">
+                    <h2><span class="icon">🧠</span> Glasgow Coma Scale</h2>
+                    <div class="grid-inputs">
+                        <div class="input-field"><label>GCS Eye (Min)</label><input type="number" id="gcs_eye_min" min="1" max="4" required></div>
+                        <div class="input-field"><label>GCS Verbal (Min)</label><input type="number" id="gcs_verbal_min" min="1" max="5" required></div>
+                        <div class="input-field"><label>GCS Motor (Min)</label><input type="number" id="gcs_motor_min" min="1" max="6" required></div>
+                        <div class="input-field"><label>GCS Total (Min)</label><input type="number" id="gcs_total_min" min="3" max="15" required></div>
+                    </div>
+                </section>
+
+                <!-- Group 4: Comorbidities -->
+                <section class="form-group">
+                    <h2><span class="icon">🏥</span> Active Comorbidities (0=No, 1=Yes)</h2>
+                    <div class="grid-inputs">
+                        <div class="input-field"><label>Diabetes</label><input type="number" id="diabetes" min="0" max="1" required></div>
+                        <div class="input-field"><label>Hypertension</label><input type="number" id="hypertension" min="0" max="1" required></div>
+                        <div class="input-field"><label>CKD</label><input type="number" id="ckd" min="0" max="1" required></div>
+                        <div class="input-field"><label>Heart Failure</label><input type="number" id="heart_failure" min="0" max="1" required></div>
+                        <div class="input-field"><label>COPD</label><input type="number" id="copd" min="0" max="1" required></div>
+                        <div class="input-field"><label>Cancer</label><input type="number" id="cancer" min="0" max="1" required></div>
+                        <div class="input-field"><label>Liver Disease</label><input type="number" id="liver_disease" min="0" max="1" required></div>
+                        <div class="input-field"><label>Stroke</label><input type="number" id="stroke" min="0" max="1" required></div>
+                    </div>
+                </section>
+
+                <div class="submit-wrapper">
+                    <button type="submit" id="submit-btn" class="btn-primary">Triage Patient</button>
+                    <div id="loader" class="hidden">Running XGBoost Evaluator...</div>
+                </div>
+            </form>
+
+            <!-- SHAP Explanation Panel (shown after prediction) -->
+            <div id="shap-panel" class="shap-panel hidden">
+                <h3>🔍 AI Explanation — Why This Score?</h3>
+                <p class="shap-subtitle">Top contributing factors from SHAP analysis:</p>
+                <div id="shap-bars"></div>
+            </div>
+        </main>
+
+        <!-- Right Column: Queue Visualizer -->
+        <aside class="queue-section">
+            <!-- Doctor Status Bar -->
+            <div class="doctor-status" id="doctor-status">
+                <span class="doctor-icon">🩺</span>
+                <span id="doctor-text">3 / 3 Doctors Available</span>
+                <div class="doctor-dots" id="doctor-dots"></div>
+            </div>
+
+            <div class="queue-header">
+                <h2>Active Waiting Room</h2>
+                <div class="queue-meta">
+                    <span id="queue-count">0 Patients</span>
+                    <button id="btn-clear" class="btn-text">Clear All</button>
+                </div>
+            </div>
+            
+            <div class="queue-legend">
+                <span class="dot critical"></span> Critical
+                <span class="dot high"></span> High
+                <span class="dot medium"></span> Med
+                <span class="dot low"></span> Low
+            </div>
+
+            <!-- Tabbed Interface -->
+            <div class="queue-tabs">
+                <button class="tab-btn active" data-target="queue-aging">Aging Priority <small>(Model)</small></button>
+                <button class="tab-btn" data-target="queue-age">Age-Based Priority</button>
+                <button class="tab-btn" data-target="queue-fifo">FIFO Priority</button>
+            </div>
+
+            <div class="tab-content">
+                <div id="queue-aging" class="queue-list tab-pane active">
+                    <div class="empty-state">The waiting room is currently empty.</div>
+                </div>
+                <div id="queue-age" class="queue-list tab-pane hidden"></div>
+                <div id="queue-fifo" class="queue-list tab-pane hidden"></div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
